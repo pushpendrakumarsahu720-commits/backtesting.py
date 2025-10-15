@@ -1,0 +1,49 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import matplotlib.pyplot as plt
+
+# Download sample data (BTC/USD hourly for last 90 days)
+symbol = "BTC-USD"
+data = yf.download(symbol, interval="1h", period="90d")
+
+# Calculate Stochastic Oscillator (%K = 21, %D = 13, Slowing = 8)
+low_min = data['Low'].rolling(window=21).min()
+high_max = data['High'].rolling(window=21).max()
+stoch_k = 100 * ((data['Close'] - low_min) / (high_max - low_min))
+stoch_k_smoothed = stoch_k.rolling(window=8).mean()
+stoch_d = stoch_k_smoothed.rolling(window=13).mean()
+
+# Store in dataframe
+data['%K'] = stoch_k_smoothed
+data['%D'] = stoch_d
+
+# Signal rules:
+# Entry (Buy): %K crosses above %D and %K < 20
+# Exit (Sell): %K crosses below %D and %K > 80
+data['signal'] = 0
+data.loc[(data['%K'] > data['%D']) & (data['%K'].shift(1) <= data['%D'].shift(1)) & (data['%K'] < 20), 'signal'] = 1
+data.loc[(data['%K'] < data['%D']) & (data['%K'].shift(1) >= data['%D'].shift(1)) & (data['%K'] > 80), 'signal'] = -1
+
+# Simulate strategy (long-only)
+position = 0
+entry_price = 0
+returns = []
+
+for i in range(len(data)):
+    if data['signal'].iloc[i] == 1 and position == 0:
+        entry_price = data['Close'].iloc[i]
+        position = 1
+    elif data['signal'].iloc[i] == -1 and position == 1:
+        exit_price = data['Close'].iloc[i]
+        returns.append((exit_price - entry_price) / entry_price)
+        position = 0
+
+# Results
+total_return = np.sum(returns)
+win_rate = np.mean([r > 0 for r in returns])
+num_trades = len(returns)
+
+print(f"Total Return: {total_return * 100:.2f}%")
+print(f"Win Rate: {win_rate * 100:.2f}%")
+print(f"Number of Trades: {num_trades}")
